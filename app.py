@@ -38,9 +38,13 @@ def list_files():
         
     items = []
     
+    VIDEO_EXTENSIONS = {'.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v'}
+    
     if flat:
         for root, dirs, files in os.walk(target_dir):
             for file in files:
+                if not any(file.lower().endswith(ext) for ext in VIDEO_EXTENSIONS):
+                    continue
                 file_path = os.path.join(root, file)
                 try:
                     stat = os.stat(file_path)
@@ -55,6 +59,8 @@ def list_files():
                     pass
     else:
         for entry in os.scandir(target_dir):
+            if not entry.is_dir() and not any(entry.name.lower().endswith(ext) for ext in VIDEO_EXTENSIONS):
+                continue
             stat = entry.stat()
             items.append({
                 'name': entry.name,
