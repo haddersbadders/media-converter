@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedFilenameEl = document.getElementById('selectedFilename');
     const selectedFileStatsEl = document.getElementById('selectedFileStats');
     const btnTranscode = document.getElementById('btnTranscode');
+    const btnDeleteSelected = document.getElementById('btnDeleteSelected');
     const queueListEl = document.getElementById('queueList');
     const toggleFlatView = document.getElementById('toggleFlatView');
     const sortName = document.getElementById('sortName');
@@ -185,6 +186,56 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 3000);
         });
     });
+
+    if (btnDeleteSelected) {
+        btnDeleteSelected.addEventListener('click', () => {
+            if (selectedItems.size === 0) return;
+
+            if (!confirm(`Are you sure you want to permanently delete ${selectedItems.size} selected file(s)?`)) {
+                return;
+            }
+
+            const originalText = btnDeleteSelected.textContent;
+            btnDeleteSelected.textContent = 'Deleting...';
+            btnDeleteSelected.disabled = true;
+
+            const promises = [];
+            for (const item of selectedItems.values()) {
+                if (!item.is_dir) {
+                    promises.push(
+                        fetch(`/api/files/${encodeURIComponent(item.path)}`, { method: 'DELETE' })
+                            .then(res => res.json())
+                    );
+                }
+            }
+
+            Promise.all(promises).then(results => {
+                let hasError = false;
+                results.forEach(res => {
+                    if (res.error) {
+                        console.error('Error deleting file:', res.error);
+                        hasError = true;
+                    }
+                });
+
+                if (hasError) {
+                    alert('Some files could not be deleted. Check console for details.');
+                }
+                
+                selectedItems.clear();
+                updateSelectionUI();
+                loadFiles(currentPath, isFlatView); // Refresh the current view
+                
+                btnDeleteSelected.textContent = originalText;
+                btnDeleteSelected.disabled = false;
+            }).catch(err => {
+                console.error('Error deleting files', err);
+                alert('An error occurred while deleting files.');
+                btnDeleteSelected.textContent = originalText;
+                btnDeleteSelected.disabled = false;
+            });
+        });
+    }
 
     // Functions
     function formatBytes(bytes, decimals = 2) {
