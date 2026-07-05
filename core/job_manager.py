@@ -1,0 +1,182 @@
+import subprocess
+import threading
+import time
+import re
+import queue
+import json
+import os
+from concurrent.futures import ThreadPoolExecutor
+from core.db import update_job_status, get_job
+
+class JobManager:
+    def __init__(self, max_workers=2):
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        self.active_jobs = {} # job_id -> process
+        self.queue_lock = threading.Lock()
+        
+    def get_video_info(self, file_path):
+        cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-select_streams', 'v:0',
+            '-count_packets',
+            '-show_entries', 'stream=nb_read_packets,duration,r_frame_rate',
+            '-of', 'json',
+            file_path
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            data = json.loads(result.stdout)
+            stream = data.get('streams', [{}])[0]
+            
+            # try to get frame count
+            nb_frames = stream.get('nb_read_packets')
+            if nb_frames:
+                return {'frames': int(nb_frames)}
+                
+            # fallback to duration and framerate
+            duration = float(stream.get('duration', 0))
+            fps_str = stream.get('r_frame_rate', '0/1')
+            if '/' in fps_str:
+                num, den = fps_str.split('/')
+                fps = float(num) / float(den) if float(den) != 0 else 0
+            else:
+                fps = float(fps_str)
+                
+            if duration and fps:
+                return {'frames': int(duration * fps)}
+                
+            return {'frames': 0}
+            
+        except Exception as e:
+            print(f"Error getting video info for {file_path}: {e}")
+            return {'frames': 0}
+
+    def _run_ffmpeg(self, job_id, input_path, output_path, settings):
+        update_job_status(job_id, 'PROCESSING', progress=0.0)
+        
+        info = self.get_video_info(input_path)
+        total_frames = info.get('frames', 0)
+        
+        # Build ffmpeg command based on settings
+        cmd = ['ffmpeg', '-y', '-i', input_path]
+        
+        vcodec = settings.get('vcodec', 'copy')
+        if vcodec != 'copy':
+            cmd.extend(['-c:v', vcodec])
+            crf = settings.get('crf')
+            if crf:
+                cmd.extend(['-crf', str(crf)])
+            
+            resolution = settings.get('resolution')
+            if resolution and resolution != 'Keep Original':
+                # Map resolution
+                res_map = {
+                    '1080p': 'scale=-2:1080',
+                    '720p': 'scale=-2:720',
+                    '480p': 'scale=-2:480'
+                }
+                if resolution in res_map:
+                    cmd.extend(['-vf', res_map[resolution]])
+        else:
+            cmd.extend(['-c:v', 'copy'])
+            
+        acodec = settings.get('acodec', 'copy')
+        cmd.extend(['-c:a', acodec])
+        
+        if settings.get('preset_type') == 'audio_only':
+            cmd = ['ffmpeg', '-y', '-i', input_path, '-vn', '-c:a', acodec]
+            if acodec == 'mp3':
+                cmd.extend(['-q:a', '2'])
+            
+        cmd.append(output_path)
+        
+        print(f"[{job_id}] Running command: {' '.join(cmd)}")
+        
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True
+        )
+        
+        with self.queue_lock:
+            self.active_jobs[job_id] = process
+            
+        # Parse output
+        frame_pattern = re.compile(r"frame=\s*(\d+)")
+        speed_pattern = re.compile(r"speed=\s*([\d\.]+)x")
+        time_pattern = re.compile(r"time=(\d+):(\d+):(\d+.\d+)")
+        
+        try:
+            for line in process.stdout:
+                if process.poll() is not None:
+                    break
+                    
+                frame_match = frame_pattern.search(line)
+                speed_match = speed_pattern.search(line)
+                time_match = time_pattern.search(line)
+                
+                speed = ''
+                if speed_match:
+                    speed = speed_match.group(1) + 'x'
+                    
+                progress = 0.0
+                eta_str = ''
+                
+                if frame_match and total_frames > 0:
+                    current_frame = int(frame_match.group(1))
+                    progress = min(100.0, (current_frame / total_frames) * 100)
+                    
+                    if speed_match and float(speed_match.group(1)) > 0:
+                        fps = float(speed_match.group(1)) * 24 # rough estimate if we don't know fps
+                        # Actually speed in ffmpeg means how many times real time
+                        # let's calculate ETA based on remaining frames and current processing fps
+                        pass # a bit complex, let's use time if available
+                        
+                if time_match and not (frame_match and total_frames > 0):
+                    # Fallback to duration if we couldn't get frames
+                    pass 
+                    
+                # Update DB every so often or let's just do it directly
+                # To avoid hammering DB, could throttle
+                update_job_status(job_id, 'PROCESSING', progress=round(progress, 2), speed=speed)
+                
+            process.wait()
+            
+            with self.queue_lock:
+                if job_id in self.active_jobs:
+                    del self.active_jobs[job_id]
+            
+            if process.returncode == 0:
+                update_job_status(job_id, 'COMPLETED', progress=100.0)
+            elif process.returncode == -9 or process.returncode == 9:
+                update_job_status(job_id, 'CANCELLED')
+            else:
+                update_job_status(job_id, 'FAILED')
+                
+        except Exception as e:
+            print(f"Job {job_id} failed with exception: {e}")
+            update_job_status(job_id, 'FAILED')
+            with self.queue_lock:
+                if job_id in self.active_jobs:
+                    del self.active_jobs[job_id]
+
+    def submit_job(self, job_id, input_path, output_path, settings):
+        self.executor.submit(self._run_ffmpeg, job_id, input_path, output_path, settings)
+
+    def cancel_job(self, job_id):
+        with self.queue_lock:
+            process = self.active_jobs.get(job_id)
+            if process:
+                process.terminate() # SIGTERM
+                time.sleep(0.5)
+                if process.poll() is None:
+                    process.kill() # SIGKILL
+                del self.active_jobs[job_id]
+                update_job_status(job_id, 'CANCELLED')
+                return True
+        return False
+
+# Global instance
+job_manager = JobManager(max_workers=2)

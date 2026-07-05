@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Media Explorer & Transcoder</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="top-nav">
+            <div class="logo">
+                <span class="logo-icon">▲</span>
+                <h1>ANTIGRAVITY CODES <span class="subtitle">| Media Explorer</span></h1>
+            </div>
+            <div class="system-status">
+                <span class="status-indicator"></span>
+                <span>System Online</span>
+            </div>
+        </header>
+
+        <!-- Sub Header (Breadcrumbs & Search) -->
+        <div class="sub-header">
+            <div class="breadcrumbs" id="breadcrumbs">
+                <!-- Breadcrumbs injected via JS -->
+            </div>
+            <div class="search-container">
+                <input type="text" id="searchInput" placeholder="Search Files..." autocomplete="off">
+            </div>
+        </div>
+
+        <!-- Main Content Layout -->
+        <main class="main-layout">
+            <!-- Left Pane: File Explorer -->
+            <section class="pane explorer-pane">
+                <div class="pane-header">
+                    <h2>📂 DIRECTORIES & FILES</h2>
+                    <div class="actions">
+                        <button id="btnUpLevel" class="icon-button" title="Up One Level">..</button>
+                    </div>
+                </div>
+                <div class="file-list-container">
+                    <ul id="fileList" class="file-list">
+                        <!-- Items injected via JS -->
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Right Pane: Details & Queue -->
+            <section class="pane sidebar-pane">
+                <!-- Details Card -->
+                <div class="details-card glass-panel" id="detailsCard" style="display: none;">
+                    <div class="pane-header">
+                        <h2>⚙️ TRANSCODE CONSOLE</h2>
+                    </div>
+                    <div class="details-content">
+                        <h3 id="selectedFilename" class="selected-filename">Select a file...</h3>
+                        <p id="selectedFileStats" class="file-stats">---</p>
+                        
+                        <div class="preset-section">
+                            <h4>Preset Profiles:</h4>
+                            <ul class="preset-list">
+                                <li>
+                                    <label class="radio-label">
+                                        <input type="radio" name="preset" value="universal" checked>
+                                        <span class="radio-custom"></span>
+                                        Universal Web (H.264/AAC, MP4)
+                                    </label>
+                                </li>
+                                <li>
+                                    <label class="radio-label">
+                                        <input type="radio" name="preset" value="spacesaver">
+                                        <span class="radio-custom"></span>
+                                        Space Saver (H.265/AAC, MP4)
+                                    </label>
+                                </li>
+                                <li>
+                                    <label class="radio-label">
+                                        <input type="radio" name="preset" value="hq">
+                                        <span class="radio-custom"></span>
+                                        High Quality (CRF 18)
+                                    </label>
+                                </li>
+                                <li>
+                                    <label class="radio-label">
+                                        <input type="radio" name="preset" value="audio_only">
+                                        <span class="radio-custom"></span>
+                                        Audio-Only (MP3)
+                                    </label>
+                                </li>
+                            </ul>
+                        </div>
+                        
+                        <div class="actions-row">
+                            <button id="btnTranscode" class="btn btn-primary">Transcode Now</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Queue Panel -->
+                <div class="queue-panel glass-panel">
+                    <div class="pane-header">
+                        <h2>📊 ACTIVE QUEUE & MONITOR</h2>
+                    </div>
+                    <div class="queue-list" id="queueList">
+                        <!-- Queue items injected via JS -->
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

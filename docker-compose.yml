@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  transcoder:
+    build: .
+    container_name: media-transcoder
+    ports:
+      - "5000:5000"
+    volumes:
+      # Map the host media folder to the internal media directory
+      - ./media:/app/media
+      # Map the persistence directory for SQLite storage
+      - ./data:/app/data
+    environment:
+      - MEDIA_DIR=/app/media
+      - DB_PATH=/app/data/db.sqlite
+    restart: unless-stopped
