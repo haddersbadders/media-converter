@@ -214,6 +214,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderBreadcrumbs(data.breadcrumbs);
                 
                 // Fetch codecs asynchronously
+                let filesToScan = 0;
+                let filesScanned = 0;
+                const scanProgressEl = document.getElementById('scanProgress');
+                
+                fileItems.forEach(item => {
+                    if (!item.is_dir) filesToScan++;
+                });
+
+                if (filesToScan > 0 && scanProgressEl) {
+                    scanProgressEl.style.display = 'inline-block';
+                    scanProgressEl.textContent = `Scanning metadata: 0/${filesToScan}`;
+                } else if (scanProgressEl) {
+                    scanProgressEl.style.display = 'none';
+                }
+
                 fileItems.forEach(item => {
                     if (!item.is_dir) {
                         item.codec = '...';
@@ -226,6 +241,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             .catch(err => {
                                 item.codec = 'Error';
                                 if (item.codecEl) item.codecEl.textContent = item.codec;
+                            })
+                            .finally(() => {
+                                filesScanned++;
+                                if (scanProgressEl) {
+                                    scanProgressEl.textContent = `Scanning metadata: ${filesScanned}/${filesToScan}`;
+                                    if (filesScanned >= filesToScan) {
+                                        setTimeout(() => {
+                                            scanProgressEl.style.display = 'none';
+                                        }, 1000);
+                                    }
+                                }
                             });
                     }
                 });
