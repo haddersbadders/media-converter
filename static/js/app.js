@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sortSize = document.getElementById('sortSize');
     const selectAllCheckbox = document.getElementById('selectAllCheckbox');
     const mediaFilter = document.getElementById('mediaFilter');
+    const sizeFilter = document.getElementById('sizeFilter');
 
     // Init
     loadFiles('', isFlatView);
@@ -75,6 +76,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (mediaFilter) {
         mediaFilter.addEventListener('change', () => {
+            sortAndRenderFiles();
+        });
+    }
+
+    if (sizeFilter) {
+        sizeFilter.addEventListener('input', () => {
             sortAndRenderFiles();
         });
     }
@@ -371,10 +378,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function sortAndRenderFiles() {
         const query = searchInput.value.toLowerCase();
         const filterVal = mediaFilter ? mediaFilter.value : 'all';
+        const minSizeMB = sizeFilter && sizeFilter.value ? parseFloat(sizeFilter.value) : 0;
+        const minSizeBytes = minSizeMB * 1024 * 1024;
         
         let filtered = fileItems.filter(item => {
             if (!item.name.toLowerCase().includes(query)) return false;
             if (item.is_dir) return true; // Always show directories (can be improved to hide empty ones, but keeping it simple)
+            
+            if (minSizeBytes > 0 && item.size < minSizeBytes) return false;
             
             const isTranscoded = item.name.includes('_transcoded_');
             
