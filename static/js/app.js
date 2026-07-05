@@ -376,7 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!item.name.toLowerCase().includes(query)) return false;
             if (item.is_dir) return true; // Always show directories (can be improved to hide empty ones, but keeping it simple)
             
-            const isTranscoded = item.name.includes('_transcoded_');
+            const isTranscoded = item.name.includes('_transcoded_') || item.path.split('/').includes('transcoded');
             
             if (filterVal === 'transcoded') return isTranscoded;
             if (filterVal === 'except_transcoded') return !isTranscoded;
@@ -496,7 +496,7 @@ document.addEventListener('DOMContentLoaded', () => {
             badgesContainer.style.flexShrink = '0';
             nameContainer.appendChild(badgesContainer);
             
-            if (!item.is_dir && item.name.includes('_transcoded_')) {
+            if (!item.is_dir && (item.name.includes('_transcoded_') || item.path.split('/').includes('transcoded'))) {
                 const badge = document.createElement('span');
                 badge.textContent = 'Transcoded';
                 badge.style.fontSize = '0.7em';
