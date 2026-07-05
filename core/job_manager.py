@@ -6,7 +6,7 @@ import queue
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor
-from core.db import update_job_status, get_job
+from core.db import update_job_status, get_job, get_cached_video_info, cache_video_info
 
 class JobManager:
     def __init__(self, max_workers=1):
@@ -15,7 +15,25 @@ class JobManager:
         self.paused_jobs = set()
         self.queue_lock = threading.Lock()
         
+        # Limit ffprobe concurrency to avoid CPU spikes
+        try:
+            cpu_count = os.cpu_count() or 4
+            probe_workers = max(1, min(4, cpu_count))
+        except Exception:
+            probe_workers = 4
+        self.ffprobe_semaphore = threading.Semaphore(probe_workers)
+        
     def get_video_info(self, file_path):
+        try:
+            mtime = os.stat(file_path).st_mtime
+        except Exception as e:
+            print(f"Error stating file {file_path}: {e}")
+            return {'frames': 0, 'codec_name': 'unknown'}
+
+        cached_info = get_cached_video_info(file_path, mtime)
+        if cached_info is not None:
+            return cached_info
+
         cmd = [
             'ffprobe',
             '-v', 'error',
@@ -26,7 +44,8 @@ class JobManager:
             file_path
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            with self.ffprobe_semaphore:
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             data = json.loads(result.stdout)
             stream = data.get('streams', [{}])[0]
             
@@ -37,22 +56,23 @@ class JobManager:
             nb_frames = stream.get('nb_read_packets')
             if nb_frames:
                 info['frames'] = int(nb_frames)
-                return info
-                
-            # fallback to duration and framerate
-            duration = float(stream.get('duration', 0))
-            fps_str = stream.get('r_frame_rate', '0/1')
-            if '/' in fps_str:
-                num, den = fps_str.split('/')
-                fps = float(num) / float(den) if float(den) != 0 else 0
             else:
-                fps = float(fps_str)
-                
-            if duration and fps:
-                info['frames'] = int(duration * fps)
-            else:
-                info['frames'] = 0
-                
+                # fallback to duration and framerate
+                duration = float(stream.get('duration', 0))
+                fps_str = stream.get('r_frame_rate', '0/1')
+                if '/' in fps_str:
+                    num, den = fps_str.split('/')
+                    fps = float(num) / float(den) if float(den) != 0 else 0
+                else:
+                    fps = float(fps_str)
+                    
+                if duration and fps:
+                    info['frames'] = int(duration * fps)
+                else:
+                    info['frames'] = 0
+            
+            # Cache the result
+            cache_video_info(file_path, mtime, info)
             return info
             
         except Exception as e:

@@ -38,6 +38,14 @@ def init_db():
         WHERE status = 'PROCESSING'
     ''')
     
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS video_metadata (
+            file_path TEXT PRIMARY KEY,
+            mtime REAL,
+            metadata TEXT
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -97,3 +105,31 @@ def delete_job(job_id):
     c.execute('DELETE FROM jobs WHERE id = ?', (job_id,))
     conn.commit()
     conn.close()
+
+def get_cached_video_info(file_path, current_mtime):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('SELECT mtime, metadata FROM video_metadata WHERE file_path = ?', (file_path,))
+    row = c.fetchone()
+    conn.close()
+    
+    if row and row['mtime'] == current_mtime:
+        try:
+            return json.loads(row['metadata'])
+        except Exception:
+            pass
+    return None
+
+def cache_video_info(file_path, current_mtime, metadata):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO video_metadata (file_path, mtime, metadata)
+        VALUES (?, ?, ?)
+        ON CONFLICT(file_path) DO UPDATE SET
+            mtime=excluded.mtime,
+            metadata=excluded.metadata
+    ''', (file_path, current_mtime, json.dumps(metadata)))
+    conn.commit()
+    conn.close()
+
