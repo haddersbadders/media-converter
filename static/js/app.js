@@ -301,32 +301,51 @@ document.addEventListener('DOMContentLoaded', () => {
                     scanProgressEl.style.display = 'none';
                 }
 
-                fileItems.forEach(item => {
-                    if (!item.is_dir) {
-                        item.codec = '...';
-                        fetch(`/api/info?path=${encodeURIComponent(item.path)}`)
-                            .then(res => res.json())
-                            .then(info => {
-                                item.codec = info.codec_name && info.codec_name !== 'unknown' ? info.codec_name.toUpperCase() : 'Unknown';
-                                if (item.codecEl) item.codecEl.textContent = item.codec;
-                            })
-                            .catch(err => {
-                                item.codec = 'Error';
-                                if (item.codecEl) item.codecEl.textContent = item.codec;
-                            })
-                            .finally(() => {
-                                filesScanned++;
-                                if (scanProgressEl) {
-                                    scanProgressEl.textContent = `Scanning metadata: ${filesScanned}/${filesToScan}`;
-                                    if (filesScanned >= filesToScan) {
-                                        setTimeout(() => {
-                                            scanProgressEl.style.display = 'none';
-                                        }, 1000);
-                                    }
-                                }
-                            });
+                const scanQueue = fileItems.filter(i => !i.is_dir);
+                let activeScans = 0;
+                const MAX_CONCURRENT = 5;
+
+                function processNextScan() {
+                    if (scanQueue.length === 0 || activeScans >= MAX_CONCURRENT) {
+                        return;
                     }
-                });
+
+                    const item = scanQueue.shift();
+                    activeScans++;
+                    item.codec = '...';
+                    
+                    fetch(`/api/info?path=${encodeURIComponent(item.path)}`)
+                        .then(res => res.json())
+                        .then(info => {
+                            item.codec = info.codec_name && info.codec_name !== 'unknown' ? info.codec_name.toUpperCase() : 'Unknown';
+                            if (item.codecEl) item.codecEl.textContent = item.codec;
+                        })
+                        .catch(err => {
+                            item.codec = 'Error';
+                            if (item.codecEl) item.codecEl.textContent = item.codec;
+                        })
+                        .finally(() => {
+                            filesScanned++;
+                            activeScans--;
+                            if (scanProgressEl) {
+                                scanProgressEl.textContent = `Scanning metadata: ${filesScanned}/${filesToScan}`;
+                                if (filesScanned >= filesToScan) {
+                                    setTimeout(() => {
+                                        scanProgressEl.style.display = 'none';
+                                    }, 1000);
+                                }
+                            }
+                            processNextScan();
+                        });
+                        
+                    // Try to start more if we have capacity
+                    processNextScan();
+                }
+
+                // Kick off initial workers
+                for (let i = 0; i < MAX_CONCURRENT; i++) {
+                    processNextScan();
+                }
                 
                 sortAndRenderFiles();
             })
