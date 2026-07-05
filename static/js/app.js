@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSort = 'name';
     let sortDesc = false;
     let globalTranscodedFiles = [];
+    let currentVisibleItems = [];
 
     // DOM Elements
     const fileListEl = document.getElementById('fileList');
@@ -81,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     selectAllCheckbox.addEventListener('change', (e) => {
         if (e.target.checked) {
-            fileItems.forEach(item => {
+            currentVisibleItems.forEach(item => {
                 if (!item.is_dir) selectedItems.set(item.path, item);
             });
         } else {
@@ -410,6 +411,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             return sortDesc ? -cmp : cmp;
         });
+        currentVisibleItems = sorted;
         renderFileList(sorted);
         updateSelectionUI();
     }
@@ -568,7 +570,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateSelectionUI() {
-        const allFiles = fileItems.filter(i => !i.is_dir);
+        const allFiles = currentVisibleItems.filter(i => !i.is_dir);
         if (allFiles.length > 0 && allFiles.every(i => selectedItems.has(i.path))) {
             selectAllCheckbox.checked = true;
             selectAllCheckbox.indeterminate = false;
