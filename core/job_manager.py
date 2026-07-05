@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from core.db import update_job_status, get_job
 
 class JobManager:
-    def __init__(self, max_workers=2):
+    def __init__(self, max_workers=1):
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.active_jobs = {} # job_id -> process
         self.paused_jobs = set()
@@ -226,4 +226,4 @@ class JobManager:
         return False
 
 # Global instance
-job_manager = JobManager(max_workers=2)
+job_manager = JobManager(max_workers=1)
