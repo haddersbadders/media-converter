@@ -218,6 +218,7 @@ def remove_job(job_id):
 @app.route('/queue/stream')
 def stream_queue():
     def event_stream():
+        from core.db import job_update_cond
         last_jobs_json = ""
         while True:
             jobs = get_all_jobs()
@@ -225,9 +226,13 @@ def stream_queue():
             if jobs_json != last_jobs_json:
                 yield f"data: {jobs_json}\n\n"
                 last_jobs_json = jobs_json
-            time.sleep(1) # Poll DB every second and push if changed
+            
+            with job_update_cond:
+                job_update_cond.wait(timeout=15.0)
             
     return Response(event_stream(), mimetype="text/event-stream")
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    from waitress import serve
+    print("Starting production server with waitress on port 5000...")
+    serve(app, host='0.0.0.0', port=5000, threads=8)

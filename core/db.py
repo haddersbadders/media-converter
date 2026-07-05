@@ -1,7 +1,14 @@
 import sqlite3
 import os
 import json
+import threading
 from datetime import datetime
+
+job_update_cond = threading.Condition()
+
+def notify_update():
+    with job_update_cond:
+        job_update_cond.notify_all()
 
 # Default DB path, can be overridden by environment variable
 DB_PATH = os.environ.get('DB_PATH', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'db.sqlite'))
@@ -59,6 +66,7 @@ def add_job(job_id, filename, output_path, settings):
     ''', (job_id, filename, output_path, json.dumps(settings), created_at))
     conn.commit()
     conn.close()
+    notify_update()
 
 def update_job_status(job_id, status, progress=None, speed=None, eta=None):
     conn = get_db_connection()
@@ -82,6 +90,7 @@ def update_job_status(job_id, status, progress=None, speed=None, eta=None):
     c.execute(query, tuple(params))
     conn.commit()
     conn.close()
+    notify_update()
 
 def get_all_jobs():
     conn = get_db_connection()
@@ -105,6 +114,7 @@ def delete_job(job_id):
     c.execute('DELETE FROM jobs WHERE id = ?', (job_id,))
     conn.commit()
     conn.close()
+    notify_update()
 
 def get_cached_video_info(file_path, current_mtime):
     conn = get_db_connection()
