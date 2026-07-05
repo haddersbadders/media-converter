@@ -5,10 +5,10 @@ services:
     build: .
     container_name: media-transcoder
     ports:
-      - "5000:5000"
+      - "5001:5000"
     volumes:
       # Map the host media folder to the internal media directory
-      - ./media:/app/media
+      - ~/Movies/media:/app/media
       # Map the persistence directory for SQLite storage
       - ./data:/app/data
     environment:

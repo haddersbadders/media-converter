@@ -12,6 +12,7 @@ class JobManager:
     def __init__(self, max_workers=2):
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.active_jobs = {} # job_id -> process
+        self.paused_jobs = set()
         self.queue_lock = threading.Lock()
         
     def get_video_info(self, file_path):
@@ -20,7 +21,7 @@ class JobManager:
             '-v', 'error',
             '-select_streams', 'v:0',
             '-count_packets',
-            '-show_entries', 'stream=nb_read_packets,duration,r_frame_rate',
+            '-show_entries', 'stream=nb_read_packets,duration,r_frame_rate,codec_name',
             '-of', 'json',
             file_path
         ]
@@ -29,10 +30,14 @@ class JobManager:
             data = json.loads(result.stdout)
             stream = data.get('streams', [{}])[0]
             
+            info = {}
+            info['codec_name'] = stream.get('codec_name', 'unknown')
+            
             # try to get frame count
             nb_frames = stream.get('nb_read_packets')
             if nb_frames:
-                return {'frames': int(nb_frames)}
+                info['frames'] = int(nb_frames)
+                return info
                 
             # fallback to duration and framerate
             duration = float(stream.get('duration', 0))
@@ -44,13 +49,15 @@ class JobManager:
                 fps = float(fps_str)
                 
             if duration and fps:
-                return {'frames': int(duration * fps)}
+                info['frames'] = int(duration * fps)
+            else:
+                info['frames'] = 0
                 
-            return {'frames': 0}
+            return info
             
         except Exception as e:
             print(f"Error getting video info for {file_path}: {e}")
-            return {'frames': 0}
+            return {'frames': 0, 'codec_name': 'unknown'}
 
     def _run_ffmpeg(self, job_id, input_path, output_path, settings):
         update_job_status(job_id, 'PROCESSING', progress=0.0)
@@ -101,7 +108,7 @@ class JobManager:
         )
         
         with self.queue_lock:
-            self.active_jobs[job_id] = process
+            self.active_jobs[job_id] = {'process': process, 'output_path': output_path}
             
         # Parse output
         frame_pattern = re.compile(r"frame=\s*(\d+)")
@@ -140,7 +147,8 @@ class JobManager:
                     
                 # Update DB every so often or let's just do it directly
                 # To avoid hammering DB, could throttle
-                update_job_status(job_id, 'PROCESSING', progress=round(progress, 2), speed=speed)
+                if job_id not in self.paused_jobs:
+                    update_job_status(job_id, 'PROCESSING', progress=round(progress, 2), speed=speed)
                 
             process.wait()
             
@@ -167,15 +175,54 @@ class JobManager:
 
     def cancel_job(self, job_id):
         with self.queue_lock:
-            process = self.active_jobs.get(job_id)
-            if process:
+            job_info = self.active_jobs.get(job_id)
+            if job_info:
+                process = job_info['process']
+                output_path = job_info['output_path']
                 process.terminate() # SIGTERM
                 time.sleep(0.5)
                 if process.poll() is None:
                     process.kill() # SIGKILL
                 del self.active_jobs[job_id]
                 update_job_status(job_id, 'CANCELLED')
+                
+                if os.path.exists(output_path):
+                    try:
+                        os.remove(output_path)
+                    except Exception as e:
+                        print(f"Error removing cancelled output file: {e}")
+                        
                 return True
+        return False
+
+    def pause_job(self, job_id):
+        with self.queue_lock:
+            job_info = self.active_jobs.get(job_id)
+            if job_info and job_id not in self.paused_jobs:
+                process = job_info['process']
+                import signal
+                try:
+                    process.send_signal(signal.SIGSTOP)
+                    self.paused_jobs.add(job_id)
+                    update_job_status(job_id, 'PAUSED')
+                    return True
+                except Exception as e:
+                    print(f"Error pausing job: {e}")
+        return False
+
+    def resume_job(self, job_id):
+        with self.queue_lock:
+            job_info = self.active_jobs.get(job_id)
+            if job_info and job_id in self.paused_jobs:
+                process = job_info['process']
+                import signal
+                try:
+                    process.send_signal(signal.SIGCONT)
+                    self.paused_jobs.remove(job_id)
+                    update_job_status(job_id, 'PROCESSING')
+                    return True
+                except Exception as e:
+                    print(f"Error resuming job: {e}")
         return False
 
 # Global instance

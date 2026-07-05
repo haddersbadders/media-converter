@@ -1,8 +1,11 @@
 document.addEventListener('DOMContentLoaded', () => {
     // State
     let currentPath = '';
-    let selectedFile = null;
+    let selectedItems = new Map(); // path -> item
     let fileItems = [];
+    let isFlatView = false;
+    let currentSort = 'name';
+    let sortDesc = false;
 
     // DOM Elements
     const fileListEl = document.getElementById('fileList');
@@ -14,29 +17,90 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedFileStatsEl = document.getElementById('selectedFileStats');
     const btnTranscode = document.getElementById('btnTranscode');
     const queueListEl = document.getElementById('queueList');
+    const toggleFlatView = document.getElementById('toggleFlatView');
+    const sortName = document.getElementById('sortName');
+    const sortCodec = document.getElementById('sortCodec');
+    const sortDate = document.getElementById('sortDate');
+    const sortSize = document.getElementById('sortSize');
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
 
     // Init
-    loadFiles('');
+    loadFiles('', isFlatView);
     setupSSE();
+
+    // Tab Switching
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabPanes.forEach(p => p.classList.remove('active'));
+            
+            btn.classList.add('active');
+            const targetId = btn.getAttribute('data-tab');
+            document.getElementById(targetId).classList.add('active');
+        });
+    });
 
     // Event Listeners
     btnUpLevel.addEventListener('click', () => {
         if (currentPath) {
             const parts = currentPath.split('/').filter(Boolean);
             parts.pop();
-            loadFiles(parts.join('/'));
+            loadFiles(parts.join('/'), isFlatView);
         }
     });
 
+    toggleFlatView.addEventListener('change', (e) => {
+        isFlatView = e.target.checked;
+        loadFiles(currentPath, isFlatView);
+    });
+
+    selectAllCheckbox.addEventListener('change', (e) => {
+        if (e.target.checked) {
+            fileItems.forEach(item => {
+                if (!item.is_dir) selectedItems.set(item.path, item);
+            });
+        } else {
+            selectedItems.clear();
+        }
+        updateSelectionUI();
+    });
+
+    function handleSort(column) {
+        if (currentSort === column) {
+            sortDesc = !sortDesc;
+        } else {
+            currentSort = column;
+            sortDesc = false;
+        }
+        updateSortHeaders();
+        sortAndRenderFiles();
+    }
+
+    sortName.addEventListener('click', () => handleSort('name'));
+    sortCodec.addEventListener('click', () => handleSort('codec'));
+    sortDate.addEventListener('click', () => handleSort('date'));
+    sortSize.addEventListener('click', () => handleSort('size'));
+
+    function updateSortHeaders() {
+        sortName.textContent = `Name ${currentSort === 'name' ? (sortDesc ? '↓' : '↑') : '↕'}`;
+        sortCodec.textContent = `Codec ${currentSort === 'codec' ? (sortDesc ? '↓' : '↑') : '↕'}`;
+        sortDate.textContent = `Date ${currentSort === 'date' ? (sortDesc ? '↓' : '↑') : '↕'}`;
+        sortSize.textContent = `Size ${currentSort === 'size' ? (sortDesc ? '↓' : '↑') : '↕'}`;
+    }
+
     searchInput.addEventListener('input', (e) => {
-        const query = e.target.value.toLowerCase();
-        renderFileList(fileItems.filter(item => 
-            item.name.toLowerCase().includes(query)
-        ));
+        sortAndRenderFiles();
     });
 
     btnTranscode.addEventListener('click', () => {
-        if (!selectedFile) return;
+        if (selectedItems.size === 0) return;
+
+        const originalText = btnTranscode.textContent;
+        btnTranscode.textContent = 'Starting...';
+        btnTranscode.disabled = true;
 
         const presetEl = document.querySelector('input[name="preset"]:checked');
         const preset = presetEl ? presetEl.value : 'universal';
@@ -59,17 +123,43 @@ document.addEventListener('DOMContentLoaded', () => {
             settings.acodec = 'mp3';
         }
 
-        fetch('/api/jobs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                input_path: selectedFile.path,
-                settings: settings
-            })
-        }).then(res => res.json()).then(data => {
-            console.log('Job submitted', data);
+        const promises = [];
+        for (const item of selectedItems.values()) {
+            promises.push(
+                fetch('/api/jobs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        input_path: item.path,
+                        settings: settings
+                    })
+                }).then(res => res.json())
+            );
+        }
+
+        Promise.all(promises).then(results => {
+            console.log('Jobs submitted', results);
+            btnTranscode.textContent = 'Started! Check Queue...';
+            btnTranscode.style.backgroundColor = 'var(--accent-green)';
+            btnTranscode.style.color = '#000';
+            selectedItems.clear();
+            updateSelectionUI();
+            
+            setTimeout(() => {
+                btnTranscode.textContent = originalText;
+                btnTranscode.disabled = false;
+                btnTranscode.style.backgroundColor = '';
+                btnTranscode.style.color = '';
+            }, 3000);
         }).catch(err => {
-            console.error('Error submitting job', err);
+            console.error('Error submitting jobs', err);
+            btnTranscode.textContent = 'Error starting jobs';
+            btnTranscode.style.backgroundColor = 'var(--accent-red)';
+            setTimeout(() => {
+                btnTranscode.textContent = originalText;
+                btnTranscode.disabled = false;
+                btnTranscode.style.backgroundColor = '';
+            }, 3000);
         });
     });
 
@@ -83,8 +173,34 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
     }
 
-    function loadFiles(path) {
-        fetch(`/api/files?path=${encodeURIComponent(path)}`)
+    function formatDate(timestamp) {
+        if (!timestamp) return '';
+        const d = new Date(timestamp * 1000);
+        return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + 
+               d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function truncateMiddle(str, maxLength = 55) {
+        if (!str || str.length <= maxLength) return str;
+        
+        const lastDot = str.lastIndexOf('.');
+        if (lastDot !== -1 && str.length - lastDot <= 10) {
+            const ext = str.substring(lastDot);
+            const name = str.substring(0, lastDot);
+            const keepLength = maxLength - ext.length - 3;
+            const startKeep = Math.ceil(keepLength / 2);
+            const endKeep = Math.floor(keepLength / 2);
+            return name.substring(0, startKeep) + '...' + name.substring(name.length - endKeep) + ext;
+        } else {
+            const keepLength = maxLength - 3;
+            const startKeep = Math.ceil(keepLength / 2);
+            const endKeep = Math.floor(keepLength / 2);
+            return str.substring(0, startKeep) + '...' + str.substring(str.length - endKeep);
+        }
+    }
+
+    function loadFiles(path, flat = false) {
+        fetch(`/api/files?path=${encodeURIComponent(path)}&flat=${flat}`)
             .then(res => res.json())
             .then(data => {
                 if (data.error) {
@@ -94,9 +210,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentPath = data.current_path;
                 fileItems = data.items;
                 renderBreadcrumbs(data.breadcrumbs);
-                renderFileList(fileItems);
+                
+                // Fetch codecs asynchronously
+                fileItems.forEach(item => {
+                    if (!item.is_dir) {
+                        item.codec = '...';
+                        fetch(`/api/info?path=${encodeURIComponent(item.path)}`)
+                            .then(res => res.json())
+                            .then(info => {
+                                item.codec = info.codec_name && info.codec_name !== 'unknown' ? info.codec_name.toUpperCase() : 'Unknown';
+                                if (item.codecEl) item.codecEl.textContent = item.codec;
+                            })
+                            .catch(err => {
+                                item.codec = 'Error';
+                                if (item.codecEl) item.codecEl.textContent = item.codec;
+                            });
+                    }
+                });
+                
+                sortAndRenderFiles();
             })
             .catch(err => console.error(err));
+    }
+
+    function sortAndRenderFiles() {
+        const query = searchInput.value.toLowerCase();
+        let filtered = fileItems.filter(item => item.name.toLowerCase().includes(query));
+        
+        let sorted = [...filtered];
+        sorted.sort((a, b) => {
+            if (a.is_dir && !b.is_dir) return -1;
+            if (!a.is_dir && b.is_dir) return 1;
+            
+            let cmp = 0;
+            if (currentSort === 'name') {
+                cmp = a.name.localeCompare(b.name);
+            } else if (currentSort === 'size') {
+                cmp = a.size - b.size;
+            } else if (currentSort === 'codec') {
+                const codecA = a.codec || '';
+                const codecB = b.codec || '';
+                cmp = codecA.localeCompare(codecB);
+            } else if (currentSort === 'date') {
+                cmp = (a.mtime || 0) - (b.mtime || 0);
+            }
+            return sortDesc ? -cmp : cmp;
+        });
+        renderFileList(sorted);
+        updateSelectionUI();
     }
 
     function renderBreadcrumbs(crumbs) {
@@ -108,7 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
             a.href = '#';
             a.onclick = (e) => {
                 e.preventDefault();
-                loadFiles(crumb.path);
+                loadFiles(crumb.path, isFlatView);
             };
             breadcrumbsEl.appendChild(a);
             
@@ -126,31 +287,130 @@ document.addEventListener('DOMContentLoaded', () => {
         items.forEach(item => {
             const li = document.createElement('li');
             li.className = 'file-item';
-            if (selectedFile && selectedFile.path === item.path) {
-                li.classList.add('selected');
+            li.setAttribute('data-path', item.path);
+
+            const checkboxContainer = document.createElement('div');
+            checkboxContainer.style.width = '2rem';
+            checkboxContainer.style.display = 'flex';
+            checkboxContainer.style.justifyContent = 'center';
+            checkboxContainer.style.alignItems = 'center';
+            checkboxContainer.style.marginRight = '0.5rem';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            
+            if (item.is_dir) {
+                checkbox.style.visibility = 'hidden';
+            } else {
+                checkbox.checked = selectedItems.has(item.path);
+                checkbox.addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        selectedItems.set(item.path, item);
+                    } else {
+                        selectedItems.delete(item.path);
+                    }
+                    updateSelectionUI();
+                });
+                checkbox.addEventListener('click', (e) => e.stopPropagation());
             }
+            checkboxContainer.appendChild(checkbox);
 
             const icon = document.createElement('span');
             icon.className = 'file-icon';
             icon.textContent = item.is_dir ? '📁' : '🎬';
             
-            const name = document.createElement('span');
-            name.className = 'file-name';
-            name.textContent = item.name;
+            const nameContainer = document.createElement('span');
+            nameContainer.className = 'file-name';
+            nameContainer.style.display = 'flex';
+            nameContainer.style.alignItems = 'center';
+            nameContainer.style.gap = '8px';
+            nameContainer.style.flex = '1';
+            nameContainer.style.minWidth = '0';
+            
+            const nameText = document.createElement('span');
+            nameText.className = 'file-name-text';
+            nameText.textContent = truncateMiddle(item.name, 55);
+            nameText.title = item.name;
+            nameText.style.whiteSpace = 'nowrap';
+            nameText.style.overflow = 'hidden';
+            nameText.style.textOverflow = 'ellipsis';
+            nameContainer.appendChild(nameText);
+            
+            const badgesContainer = document.createElement('span');
+            badgesContainer.style.display = 'flex';
+            badgesContainer.style.gap = '4px';
+            badgesContainer.style.flexShrink = '0';
+            nameContainer.appendChild(badgesContainer);
+            
+            if (!item.is_dir && item.name.includes('_transcoded_')) {
+                const badge = document.createElement('span');
+                badge.textContent = 'Transcoded';
+                badge.style.fontSize = '0.7em';
+                badge.style.padding = '2px 6px';
+                badge.style.borderRadius = '12px';
+                badge.style.backgroundColor = 'var(--accent-color, #4CAF50)';
+                badge.style.color = '#fff';
+                badge.style.fontWeight = 'bold';
+                badgesContainer.appendChild(badge);
+            } else if (!item.is_dir) {
+                const lastDotIndex = item.path.lastIndexOf('.');
+                const basePath = lastDotIndex !== -1 ? item.path.substring(0, lastDotIndex) : item.path;
+                
+                const hasTranscodedSibling = fileItems.some(other => 
+                    other !== item && !other.is_dir && other.path.startsWith(basePath + '_transcoded_')
+                );
+                
+                if (hasTranscodedSibling) {
+                    const badge = document.createElement('span');
+                    badge.textContent = 'Original';
+                    badge.style.fontSize = '0.7em';
+                    badge.style.padding = '2px 6px';
+                    badge.style.borderRadius = '12px';
+                    badge.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                    badge.style.border = '1px solid var(--text-secondary)';
+                    badge.style.color = 'var(--text-secondary)';
+                    badge.style.fontWeight = 'bold';
+                    badgesContainer.appendChild(badge);
+                }
+            }
+            
+            const codecSpan = document.createElement('span');
+            codecSpan.className = 'file-codec';
+            codecSpan.style.width = '100px';
+            codecSpan.style.color = 'var(--text-secondary)';
+            codecSpan.style.fontSize = '0.85rem';
+            codecSpan.style.textAlign = 'left';
+            codecSpan.textContent = item.is_dir ? '' : (item.codec || '...');
+            item.codecEl = codecSpan;
+            
+            const dateSpan = document.createElement('span');
+            dateSpan.className = 'file-date';
+            dateSpan.style.width = '140px';
+            dateSpan.style.textAlign = 'right';
+            dateSpan.style.color = 'var(--text-secondary)';
+            dateSpan.style.fontSize = '0.85rem';
+            dateSpan.style.fontFamily = 'var(--font-mono)';
+            dateSpan.textContent = formatDate(item.mtime);
             
             const size = document.createElement('span');
             size.className = 'file-size';
+            size.style.width = '100px';
+            size.style.textAlign = 'right';
             size.textContent = item.is_dir ? '' : formatBytes(item.size);
 
+            li.appendChild(checkboxContainer);
             li.appendChild(icon);
-            li.appendChild(name);
+            li.appendChild(nameContainer);
+            li.appendChild(codecSpan);
+            li.appendChild(dateSpan);
             li.appendChild(size);
 
             li.addEventListener('click', () => {
                 if (item.is_dir) {
-                    loadFiles(item.path);
+                    loadFiles(item.path, isFlatView);
                 } else {
-                    selectFile(item, li);
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change'));
                 }
             });
 
@@ -158,15 +418,43 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function selectFile(item, liElement) {
-        selectedFile = item;
-        // Update UI selection
-        document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
-        if (liElement) liElement.classList.add('selected');
+    function updateSelectionUI() {
+        const allFiles = fileItems.filter(i => !i.is_dir);
+        if (allFiles.length > 0 && allFiles.every(i => selectedItems.has(i.path))) {
+            selectAllCheckbox.checked = true;
+            selectAllCheckbox.indeterminate = false;
+        } else if (allFiles.some(i => selectedItems.has(i.path))) {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = true;
+        } else {
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+        }
 
-        detailsCard.style.display = 'flex';
-        selectedFilenameEl.textContent = item.name;
-        selectedFileStatsEl.textContent = `Path: ${item.path} | Size: ${formatBytes(item.size)}`;
+        if (selectedItems.size === 0) {
+            detailsCard.style.display = 'none';
+        } else {
+            detailsCard.style.display = 'flex';
+            if (selectedItems.size === 1) {
+                const item = Array.from(selectedItems.values())[0];
+                selectedFilenameEl.textContent = truncateMiddle(item.name, 40);
+                selectedFileStatsEl.textContent = `Path: ${item.path} | Size: ${formatBytes(item.size)} | Codec: ${item.codec || 'Unknown'}`;
+            } else {
+                selectedFilenameEl.textContent = `${selectedItems.size} Files Selected`;
+                let totalSize = 0;
+                selectedItems.forEach(item => totalSize += item.size);
+                selectedFileStatsEl.textContent = `Total Size: ${formatBytes(totalSize)}`;
+            }
+        }
+        
+        document.querySelectorAll('.file-item').forEach(li => {
+            const path = li.getAttribute('data-path');
+            if (selectedItems.has(path)) {
+                li.classList.add('selected');
+            } else {
+                li.classList.remove('selected');
+            }
+        });
     }
 
     function setupSSE() {
@@ -194,6 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let statusColorClass = '';
             if (job.status === 'QUEUED') statusColorClass = 'status-queued';
             if (job.status === 'PROCESSING') statusColorClass = 'status-processing';
+            if (job.status === 'PAUSED') statusColorClass = 'status-paused';
             if (job.status === 'COMPLETED') statusColorClass = 'status-completed';
             if (job.status === 'FAILED') statusColorClass = 'status-failed';
             if (job.status === 'CANCELLED') statusColorClass = 'status-cancelled';
@@ -214,8 +503,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span>ETA: ${job.eta || '-'}</span>
                 </div>
                 <div class="queue-actions">
-                    ${job.status === 'PROCESSING' || job.status === 'QUEUED' ? 
-                        `<button class="btn-small" onclick="cancelJob('${job.id}')">Cancel</button>` : 
+                    ${(job.status === 'PROCESSING' || job.status === 'QUEUED') ? 
+                        `<button class="btn-small" onclick="pauseJob('${job.id}')">Pause</button>
+                         <button class="btn-small" onclick="cancelJob('${job.id}')">Cancel</button>` : 
+                      job.status === 'PAUSED' ? 
+                        `<button class="btn-small" onclick="resumeJob('${job.id}')">Resume</button>
+                         <button class="btn-small" onclick="cancelJob('${job.id}')">Cancel</button>` :
                         `<button class="btn-small" onclick="removeJob('${job.id}')">Remove</button>`
                     }
                 </div>
@@ -226,6 +519,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.cancelJob = function(jobId) {
         fetch(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
+    };
+
+    window.pauseJob = function(jobId) {
+        fetch(`/api/jobs/${jobId}/pause`, { method: 'POST' });
+    };
+
+    window.resumeJob = function(jobId) {
+        fetch(`/api/jobs/${jobId}/resume`, { method: 'POST' });
     };
 
     window.removeJob = function(jobId) {

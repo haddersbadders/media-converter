@@ -8,7 +8,7 @@ from core.job_manager import job_manager
 
 app = Flask(__name__)
 
-MEDIA_DIR = os.environ.get('MEDIA_DIR', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'media'))
+MEDIA_DIR = os.environ.get('MEDIA_DIR', os.path.expanduser('~/Movies/media'))
 
 # Ensure media dir exists
 os.makedirs(MEDIA_DIR, exist_ok=True)
@@ -26,6 +26,7 @@ def index():
 @app.route('/api/files')
 def list_files():
     path = request.args.get('path', '')
+    flat = request.args.get('flat', 'false').lower() == 'true'
     target_dir = os.path.join(MEDIA_DIR, path)
     
     # Security check to prevent traversing outside MEDIA_DIR
@@ -36,13 +37,32 @@ def list_files():
         return jsonify({'error': 'Directory not found'}), 404
         
     items = []
-    for entry in os.scandir(target_dir):
-        items.append({
-            'name': entry.name,
-            'is_dir': entry.is_dir(),
-            'path': os.path.relpath(entry.path, MEDIA_DIR),
-            'size': entry.stat().st_size if not entry.is_dir() else 0
-        })
+    
+    if flat:
+        for root, dirs, files in os.walk(target_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                try:
+                    stat = os.stat(file_path)
+                    items.append({
+                        'name': os.path.relpath(file_path, target_dir) if root != target_dir else file,
+                        'is_dir': False,
+                        'path': os.path.relpath(file_path, MEDIA_DIR),
+                        'size': stat.st_size,
+                        'mtime': stat.st_mtime
+                    })
+                except Exception:
+                    pass
+    else:
+        for entry in os.scandir(target_dir):
+            stat = entry.stat()
+            items.append({
+                'name': entry.name,
+                'is_dir': entry.is_dir(),
+                'path': os.path.relpath(entry.path, MEDIA_DIR),
+                'size': stat.st_size if not entry.is_dir() else 0,
+                'mtime': stat.st_mtime
+            })
         
     # Sort: folders first, then files alphabetically
     items.sort(key=lambda x: (not x['is_dir'], x['name'].lower()))
@@ -62,6 +82,20 @@ def list_files():
         'breadcrumbs': breadcrumbs,
         'items': items
     })
+
+@app.route('/api/info')
+def get_file_info():
+    path = request.args.get('path', '')
+    target_path = os.path.join(MEDIA_DIR, path)
+    
+    if not os.path.abspath(target_path).startswith(os.path.abspath(MEDIA_DIR)):
+        return jsonify({'error': 'Invalid path'}), 403
+        
+    if not os.path.exists(target_path):
+        return jsonify({'error': 'File not found'}), 404
+        
+    info = job_manager.get_video_info(target_path)
+    return jsonify(info)
 
 @app.route('/api/jobs', methods=['GET'])
 def get_jobs():
@@ -103,6 +137,18 @@ def create_job():
 def cancel_job_route(job_id):
     if job_manager.cancel_job(job_id):
         return jsonify({'status': 'CANCELLED'})
+    return jsonify({'error': 'Job not active or not found'}), 404
+
+@app.route('/api/jobs/<job_id>/pause', methods=['POST'])
+def pause_job_route(job_id):
+    if job_manager.pause_job(job_id):
+        return jsonify({'status': 'PAUSED'})
+    return jsonify({'error': 'Job not active or not found'}), 404
+
+@app.route('/api/jobs/<job_id>/resume', methods=['POST'])
+def resume_job_route(job_id):
+    if job_manager.resume_job(job_id):
+        return jsonify({'status': 'PROCESSING'})
     return jsonify({'error': 'Job not active or not found'}), 404
 
 @app.route('/api/jobs/<job_id>', methods=['DELETE'])
