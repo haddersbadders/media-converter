@@ -7,8 +7,8 @@ services:
     ports:
       - "5001:5000"
     volumes:
-      # Map the host media folder to the internal media directory
-      - ~/Movies/media:/app/media
+      # Map the host media folder to the internal media directory (configurable via HOST_MEDIA_DIR)
+      - ${HOST_MEDIA_DIR:-~/Movies/media}:/app/media
       # Map the persistence directory for SQLite storage
       - ./data:/app/data
     environment:

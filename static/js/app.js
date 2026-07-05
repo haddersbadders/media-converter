@@ -353,11 +353,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 badge.style.fontWeight = 'bold';
                 badgesContainer.appendChild(badge);
             } else if (!item.is_dir) {
-                const lastDotIndex = item.path.lastIndexOf('.');
-                const basePath = lastDotIndex !== -1 ? item.path.substring(0, lastDotIndex) : item.path;
+                const dirPath = item.path.lastIndexOf('/') !== -1 ? item.path.substring(0, item.path.lastIndexOf('/')) : '';
+                const baseFileName = item.name.lastIndexOf('.') !== -1 ? item.name.substring(0, item.name.lastIndexOf('.')) : item.name;
+                const expectedTranscodedDir = dirPath ? `${dirPath}/transcoded/` : 'transcoded/';
                 
                 const hasTranscodedSibling = fileItems.some(other => 
-                    other !== item && !other.is_dir && other.path.startsWith(basePath + '_transcoded_')
+                    other !== item && !other.is_dir && 
+                    other.path.startsWith(expectedTranscodedDir) &&
+                    other.name.startsWith(baseFileName + '_transcoded_')
                 );
                 
                 if (hasTranscodedSibling) {

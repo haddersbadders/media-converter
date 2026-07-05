@@ -125,8 +125,10 @@ def create_job():
     if settings.get('preset_type') == 'audio_only':
         ext = '.mp3' if settings.get('acodec', 'mp3') == 'mp3' else '.m4a'
         
-    output_rel_path = os.path.join(dir_name, f"{base_name}_transcoded_{int(time.time())}{ext}")
+    output_rel_path = os.path.join(dir_name, "transcoded", f"{base_name}_transcoded_{int(time.time())}{ext}")
     output_path = os.path.join(MEDIA_DIR, output_rel_path)
+    
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
     add_job(job_id, input_rel_path, output_rel_path, settings)
     job_manager.submit_job(job_id, input_path, output_path, settings)
