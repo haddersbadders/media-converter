@@ -90,7 +90,7 @@ class JobManager:
         total_frames = info.get('frames', 0)
         
         # Build ffmpeg command based on settings
-        cmd = ['ffmpeg', '-y', '-i', input_path]
+        cmd = ['ffmpeg', '-y']
         
         vcodec = settings.get('vcodec', 'copy')
         hw_accel = settings.get('hw_accel', 'none')
@@ -99,12 +99,18 @@ class JobManager:
         if settings.get('use_qsv', False) and hw_accel == 'none':
             hw_accel = 'qsv'
             
+        if vcodec != 'copy' and hw_accel == 'qsv':
+            # Use VAAPI instead of QSV for much better Linux/Docker compatibility
+            cmd.extend(['-vaapi_device', '/dev/dri/renderD128'])
+            
+        cmd.extend(['-i', input_path])
+            
         if vcodec != 'copy':
             if hw_accel == 'qsv':
                 if vcodec == 'libx264':
-                    vcodec = 'h264_qsv'
+                    vcodec = 'h264_vaapi'
                 elif vcodec == 'libx265':
-                    vcodec = 'hevc_qsv'
+                    vcodec = 'hevc_vaapi'
             elif hw_accel == 'videotoolbox':
                 if vcodec == 'libx264':
                     vcodec = 'h264_videotoolbox'
@@ -120,7 +126,7 @@ class JobManager:
             crf = settings.get('crf')
             if crf:
                 if hw_accel == 'qsv':
-                    cmd.extend(['-global_quality', str(crf)])
+                    cmd.extend(['-qp', str(crf)]) # VAAPI uses -qp or -global_quality
                 elif hw_accel == 'nvenc':
                     cmd.extend(['-cq', str(crf)])
                 elif hw_accel == 'videotoolbox':
@@ -129,6 +135,8 @@ class JobManager:
                     cmd.extend(['-crf', str(crf)])
             
             resolution = settings.get('resolution')
+            vf_filters = []
+            
             if resolution and resolution != 'Keep Original':
                 # Map resolution
                 res_map = {
@@ -137,7 +145,13 @@ class JobManager:
                     '480p': 'scale=-2:480'
                 }
                 if resolution in res_map:
-                    cmd.extend(['-vf', res_map[resolution]])
+                    vf_filters.append(res_map[resolution])
+                    
+            if hw_accel == 'qsv':
+                vf_filters.extend(['format=nv12', 'hwupload'])
+                
+            if vf_filters:
+                cmd.extend(['-vf', ','.join(vf_filters)])
         else:
             cmd.extend(['-c:v', 'copy'])
             
