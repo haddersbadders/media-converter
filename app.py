@@ -3,7 +3,7 @@ import os
 import uuid
 import time
 import json
-from core.db import init_db, add_job, get_all_jobs, delete_job
+from core.db import init_db, add_job, get_all_jobs, delete_job, get_job
 from core.job_manager import job_manager
 
 app = Flask(__name__)
@@ -161,6 +161,17 @@ def resume_job_route(job_id):
 
 @app.route('/api/jobs/<job_id>', methods=['DELETE'])
 def remove_job(job_id):
+    delete_file = request.args.get('delete_file', 'false').lower() == 'true'
+    if delete_file:
+        job = get_job(job_id)
+        if job and job.get('output_path'):
+            full_path = os.path.join(MEDIA_DIR, job['output_path'])
+            if os.path.exists(full_path):
+                try:
+                    os.remove(full_path)
+                except Exception as e:
+                    print(f"Error deleting file {full_path}: {e}")
+                    
     delete_job(job_id)
     return jsonify({'status': 'REMOVED'})
 

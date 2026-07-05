@@ -512,7 +512,8 @@ document.addEventListener('DOMContentLoaded', () => {
                       job.status === 'PAUSED' ? 
                         `<button class="btn-small" onclick="resumeJob('${job.id}')">Resume</button>
                          <button class="btn-small" onclick="cancelJob('${job.id}')">Cancel</button>` :
-                        `<button class="btn-small" onclick="removeJob('${job.id}')">Remove</button>`
+                        `<button class="btn-small" onclick="removeJob('${job.id}')">Remove</button>
+                         <button class="btn-small" onclick="deleteFileAndJob('${job.id}')" style="background-color: var(--accent-red);">Delete File</button>`
                     }
                 </div>
             `;
@@ -535,4 +536,11 @@ document.addEventListener('DOMContentLoaded', () => {
     window.removeJob = function(jobId) {
         fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
     };
+
+    window.deleteFileAndJob = function(jobId) {
+        if(confirm("Are you sure you want to delete the job and the resulting file from disk?")) {
+            fetch(`/api/jobs/${jobId}?delete_file=true`, { method: 'DELETE' });
+        }
+    };
 });
+
