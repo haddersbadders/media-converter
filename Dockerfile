@@ -2,9 +2,12 @@
 FROM python:3.12-slim AS base
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sed -i 's/Components: main/Components: main non-free non-free-firmware contrib/g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    intel-media-va-driver \
+    intel-media-va-driver-non-free \
+    libmfx-gen1.2 \
+    libvpl2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up runtime directory
