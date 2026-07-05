@@ -104,10 +104,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const presetEl = document.querySelector('input[name="preset"]:checked');
         const preset = presetEl ? presetEl.value : 'universal';
-        const useQSVEl = document.getElementById('useQSV');
-        const useQSV = useQSVEl ? useQSVEl.checked : false;
+        const hwAccelEl = document.getElementById('hwAccel');
+        const hwAccel = hwAccelEl ? hwAccelEl.value : 'none';
         
-        let settings = { preset_type: preset, use_qsv: useQSV };
+        let settings = { preset_type: preset, hw_accel: hwAccel };
         
         if (preset === 'universal') {
             settings.vcodec = 'libx264';

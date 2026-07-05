@@ -93,20 +93,38 @@ class JobManager:
         cmd = ['ffmpeg', '-y', '-i', input_path]
         
         vcodec = settings.get('vcodec', 'copy')
-        use_qsv = settings.get('use_qsv', False)
+        hw_accel = settings.get('hw_accel', 'none')
         
+        # Backward compatibility for old queue items
+        if settings.get('use_qsv', False) and hw_accel == 'none':
+            hw_accel = 'qsv'
+            
         if vcodec != 'copy':
-            if use_qsv:
+            if hw_accel == 'qsv':
                 if vcodec == 'libx264':
                     vcodec = 'h264_qsv'
                 elif vcodec == 'libx265':
                     vcodec = 'hevc_qsv'
+            elif hw_accel == 'videotoolbox':
+                if vcodec == 'libx264':
+                    vcodec = 'h264_videotoolbox'
+                elif vcodec == 'libx265':
+                    vcodec = 'hevc_videotoolbox'
+            elif hw_accel == 'nvenc':
+                if vcodec == 'libx264':
+                    vcodec = 'h264_nvenc'
+                elif vcodec == 'libx265':
+                    vcodec = 'hevc_nvenc'
             
             cmd.extend(['-c:v', vcodec])
             crf = settings.get('crf')
             if crf:
-                if use_qsv:
+                if hw_accel == 'qsv':
                     cmd.extend(['-global_quality', str(crf)])
+                elif hw_accel == 'nvenc':
+                    cmd.extend(['-cq', str(crf)])
+                elif hw_accel == 'videotoolbox':
+                    cmd.extend(['-q:v', '50']) # Rough approximation for VTB
                 else:
                     cmd.extend(['-crf', str(crf)])
             
