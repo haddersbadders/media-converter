@@ -104,8 +104,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const presetEl = document.querySelector('input[name="preset"]:checked');
         const preset = presetEl ? presetEl.value : 'universal';
+        const useQSVEl = document.getElementById('useQSV');
+        const useQSV = useQSVEl ? useQSVEl.checked : false;
         
-        let settings = { preset_type: preset };
+        let settings = { preset_type: preset, use_qsv: useQSV };
         
         if (preset === 'universal') {
             settings.vcodec = 'libx264';

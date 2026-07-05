@@ -93,11 +93,22 @@ class JobManager:
         cmd = ['ffmpeg', '-y', '-i', input_path]
         
         vcodec = settings.get('vcodec', 'copy')
+        use_qsv = settings.get('use_qsv', False)
+        
         if vcodec != 'copy':
+            if use_qsv:
+                if vcodec == 'libx264':
+                    vcodec = 'h264_qsv'
+                elif vcodec == 'libx265':
+                    vcodec = 'hevc_qsv'
+            
             cmd.extend(['-c:v', vcodec])
             crf = settings.get('crf')
             if crf:
-                cmd.extend(['-crf', str(crf)])
+                if use_qsv:
+                    cmd.extend(['-global_quality', str(crf)])
+                else:
+                    cmd.extend(['-crf', str(crf)])
             
             resolution = settings.get('resolution')
             if resolution and resolution != 'Keep Original':
