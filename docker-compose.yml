@@ -14,6 +14,6 @@ services:
     environment:
       - MEDIA_DIR=/app/media
       - DB_PATH=/app/data/db.sqlite
-    # devices:
-    #   - /dev/dri:/dev/dri # Uncomment this when running on the Dell Optiplex for Intel QSV Hardware Acceleration
+    devices:
+      - /dev/dri:/dev/dri # Intel QSV Hardware Acceleration
     restart: unless-stopped

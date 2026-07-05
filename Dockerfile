@@ -4,6 +4,8 @@ FROM python:3.12-slim AS base
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    intel-media-va-driver-non-free \
+    libmfx1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up runtime directory
