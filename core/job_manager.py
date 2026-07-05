@@ -149,9 +149,18 @@ class JobManager:
         frame_pattern = re.compile(r"frame=\s*(\d+)")
         speed_pattern = re.compile(r"speed=\s*([\d\.]+)x")
         time_pattern = re.compile(r"time=(\d+):(\d+):(\d+.\d+)")
+        log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, f"{job_id}.log")
         
         try:
+            log_f = open(log_path, 'w', encoding='utf-8')
+            log_f.write(f"[{job_id}] Running command: {' '.join(cmd)}\n")
+            
             for line in process.stdout:
+                log_f.write(line)
+                log_f.flush()
+                
                 if process.poll() is not None:
                     break
                     
@@ -184,7 +193,8 @@ class JobManager:
                 # To avoid hammering DB, could throttle
                 if job_id not in self.paused_jobs:
                     update_job_status(job_id, 'PROCESSING', progress=round(progress, 2), speed=speed)
-                
+            
+            log_f.close()
             process.wait()
             
             with self.queue_lock:

@@ -534,6 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span>ETA: ${job.eta || '-'}</span>
                 </div>
                 <div class="queue-actions">
+                    <button class="btn-small" onclick="viewLogs('${job.id}')" style="margin-right: 5px;">Logs</button>
                     ${(job.status === 'PROCESSING' || job.status === 'QUEUED') ? 
                         `<button class="btn-small" onclick="pauseJob('${job.id}')">Pause</button>
                          <button class="btn-small" onclick="cancelJob('${job.id}')">Cancel</button>` : 
@@ -570,6 +571,28 @@ document.addEventListener('DOMContentLoaded', () => {
             fetch(`/api/jobs/${jobId}?delete_file=true`, { method: 'DELETE' });
         }
     };
+
+    window.viewLogs = function(jobId) {
+        fetch(`/api/jobs/${jobId}/logs`)
+            .then(res => res.json())
+            .then(data => {
+                const logsContent = document.getElementById('logsContent');
+                if (data.error) {
+                    logsContent.textContent = "Error: " + data.error;
+                } else {
+                    logsContent.textContent = data.logs || "No logs available.";
+                }
+                document.getElementById('logsModal').style.display = 'flex';
+            })
+            .catch(err => {
+                document.getElementById('logsContent').textContent = "Failed to load logs: " + err;
+                document.getElementById('logsModal').style.display = 'flex';
+            });
+    };
+
+    document.getElementById('btnCloseLogs').addEventListener('click', () => {
+        document.getElementById('logsModal').style.display = 'none';
+    });
 
     // Transcoded Files Logic
     const btnRefreshTranscoded = document.getElementById('btnRefreshTranscoded');

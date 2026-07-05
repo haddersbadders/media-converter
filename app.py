@@ -215,6 +215,19 @@ def remove_job(job_id):
     delete_job(job_id)
     return jsonify({'status': 'REMOVED'})
 
+@app.route('/api/jobs/<job_id>/logs', methods=['GET'])
+def get_job_logs(job_id):
+    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'logs', f"{job_id}.log")
+    if not os.path.exists(log_path):
+        return jsonify({'error': 'Log not found'}), 404
+        
+    try:
+        with open(log_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return jsonify({'logs': content})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/queue/stream')
 def stream_queue():
     def event_stream():
