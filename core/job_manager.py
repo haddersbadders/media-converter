@@ -60,6 +60,10 @@ class JobManager:
             return {'frames': 0, 'codec_name': 'unknown'}
 
     def _run_ffmpeg(self, job_id, input_path, output_path, settings):
+        job = get_job(job_id)
+        if job and job.get('status') == 'CANCELLED':
+            return
+            
         update_job_status(job_id, 'PROCESSING', progress=0.0)
         
         info = self.get_video_info(input_path)
@@ -193,6 +197,13 @@ class JobManager:
                         print(f"Error removing cancelled output file: {e}")
                         
                 return True
+                
+            # Check if it's a queued/paused job not in active_jobs (e.g. from app restart)
+            job = get_job(job_id)
+            if job and job.get('status') in ('QUEUED', 'PAUSED'):
+                update_job_status(job_id, 'CANCELLED')
+                return True
+                
         return False
 
     def pause_job(self, job_id):
