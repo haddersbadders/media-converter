@@ -103,6 +103,46 @@ def get_file_info():
     info = job_manager.get_video_info(target_path)
     return jsonify(info)
 
+@app.route('/api/transcoded_files')
+def get_transcoded_files():
+    items = []
+    for root, dirs, files in os.walk(MEDIA_DIR):
+        for file in files:
+            # Match files in a 'transcoded' directory or containing '_transcoded_'
+            if os.path.basename(root) == 'transcoded' or '_transcoded_' in file:
+                file_path = os.path.join(root, file)
+                try:
+                    stat = os.stat(file_path)
+                    items.append({
+                        'name': file,
+                        'path': os.path.relpath(file_path, MEDIA_DIR),
+                        'size': stat.st_size,
+                        'mtime': stat.st_mtime
+                    })
+                except Exception:
+                    pass
+    
+    # Sort newest first
+    items.sort(key=lambda x: x['mtime'], reverse=True)
+    return jsonify({'items': items})
+
+@app.route('/api/files/<path:file_path>', methods=['DELETE'])
+def delete_file(file_path):
+    target_path = os.path.join(MEDIA_DIR, file_path)
+    
+    # Security check to prevent traversing outside MEDIA_DIR
+    if not os.path.abspath(target_path).startswith(os.path.abspath(MEDIA_DIR)):
+        return jsonify({'error': 'Invalid path'}), 403
+        
+    if os.path.exists(target_path) and os.path.isfile(target_path):
+        try:
+            os.remove(target_path)
+            return jsonify({'status': 'DELETED'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    return jsonify({'error': 'File not found'}), 404
+
 @app.route('/api/jobs', methods=['GET'])
 def get_jobs():
     jobs = get_all_jobs()

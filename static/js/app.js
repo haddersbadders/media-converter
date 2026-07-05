@@ -542,5 +542,84 @@ document.addEventListener('DOMContentLoaded', () => {
             fetch(`/api/jobs/${jobId}?delete_file=true`, { method: 'DELETE' });
         }
     };
+
+    // Transcoded Files Logic
+    const btnRefreshTranscoded = document.getElementById('btnRefreshTranscoded');
+    const transcodedListEl = document.getElementById('transcodedList');
+
+    function loadTranscodedFiles() {
+        if (!transcodedListEl) return;
+        transcodedListEl.innerHTML = '<div style="padding:1rem;">Loading...</div>';
+        fetch('/api/transcoded_files')
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    transcodedListEl.innerHTML = `<div style="padding:1rem;color:var(--accent-red);">${data.error}</div>`;
+                    return;
+                }
+                renderTranscodedFiles(data.items);
+            })
+            .catch(err => {
+                transcodedListEl.innerHTML = `<div style="padding:1rem;color:var(--accent-red);">Error loading files</div>`;
+            });
+    }
+
+    function renderTranscodedFiles(items) {
+        transcodedListEl.innerHTML = '';
+        if (!items || items.length === 0) {
+            transcodedListEl.innerHTML = '<div style="padding:1rem;">No transcoded files found.</div>';
+            return;
+        }
+
+        items.forEach(item => {
+            const li = document.createElement('div');
+            li.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-bottom: 1px solid var(--border-color);';
+            
+            const info = document.createElement('div');
+            info.style.flex = '1';
+            info.style.overflow = 'hidden';
+            info.innerHTML = `
+                <div style="font-weight: 600; margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.name}</div>
+                <div style="font-size: 0.85em; color: var(--text-secondary); display: flex; gap: 1rem;">
+                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%;">${item.path}</span>
+                    <span>${formatBytes(item.size)}</span>
+                    <span>${formatDate(item.mtime)}</span>
+                </div>
+            `;
+            
+            const actions = document.createElement('div');
+            const btnDelete = document.createElement('button');
+            btnDelete.className = 'btn-small';
+            btnDelete.textContent = 'Delete File';
+            btnDelete.style.backgroundColor = 'var(--accent-red)';
+            btnDelete.style.marginLeft = '1rem';
+            btnDelete.onclick = () => deleteDirectFile(item.path);
+            
+            actions.appendChild(btnDelete);
+            li.appendChild(info);
+            li.appendChild(actions);
+            transcodedListEl.appendChild(li);
+        });
+    }
+
+    window.deleteDirectFile = function(filePath) {
+        if (confirm(`Are you sure you want to permanently delete:\n${filePath}`)) {
+            fetch(`/api/files/${encodeURIComponent(filePath)}`, { method: 'DELETE' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) alert('Error deleting file: ' + data.error);
+                    loadTranscodedFiles();
+                });
+        }
+    };
+
+    if (btnRefreshTranscoded) {
+        btnRefreshTranscoded.addEventListener('click', loadTranscodedFiles);
+    }
+    
+    const tabTranscoded = document.querySelector('[data-tab="tab-transcoded"]');
+    if (tabTranscoded) {
+        tabTranscoded.addEventListener('click', loadTranscodedFiles);
+    }
 });
 
