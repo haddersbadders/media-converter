@@ -38,7 +38,6 @@
         <div class="tabs-nav">
             <button class="tab-btn active" data-tab="tab-explorer">Media Explorer</button>
             <button class="tab-btn" data-tab="tab-queue">Queue & Monitor</button>
-            <button class="tab-btn" data-tab="tab-transcoded">Transcoded Files</button>
         </div>
 
         <!-- Main Content Layout -->
@@ -52,6 +51,16 @@
                         <div class="actions" style="display: flex; align-items: center; gap: 10px;">
                             <label style="display: flex; align-items: center; gap: 5px; font-size: 0.9em; cursor: pointer;">
                                 <input type="checkbox" id="toggleFlatView"> Show All Files
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 5px; font-size: 0.9em; cursor: pointer; margin-left: 10px;">
+                                Filter:
+                                <select id="mediaFilter" class="dropdown" style="padding: 2px 5px; border-radius: 4px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: var(--text-primary);">
+                                    <option value="all">All Media</option>
+                                    <option value="transcoded">Only Transcoded</option>
+                                    <option value="except_transcoded">All Except Transcoded</option>
+                                    <option value="original">Original</option>
+                                    <option value="not_transcoded">Not Transcoded</option>
+                                </select>
                             </label>
                             <button id="btnUpLevel" class="icon-button" title="Up One Level">..</button>
                         </div>
@@ -143,18 +152,6 @@
                     </div>
                     <div class="queue-list" id="queueList">
                         <!-- Queue items injected via JS -->
-                    </div>
-                </div>
-            </div>
-            <!-- Tab 3: Transcoded Files -->
-            <div id="tab-transcoded" class="tab-pane">
-                <div class="transcoded-panel glass-panel" style="width: 100%; height: 100%;">
-                    <div class="pane-header" style="display: flex; justify-content: space-between; align-items: center;">
-                        <h2>✅ TRANSCODED FILES LIBRARY</h2>
-                        <button id="btnRefreshTranscoded" class="btn-small">Refresh List</button>
-                    </div>
-                    <div class="transcoded-list" id="transcodedList" style="padding: 1rem; overflow-y: auto; height: calc(100% - 60px);">
-                        <!-- Transcoded items injected via JS -->
                     </div>
                 </div>
             </div>

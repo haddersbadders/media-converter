@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sortDate = document.getElementById('sortDate');
     const sortSize = document.getElementById('sortSize');
     const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const mediaFilter = document.getElementById('mediaFilter');
 
     // Init
     loadFiles('', isFlatView);
@@ -70,6 +71,12 @@ document.addEventListener('DOMContentLoaded', () => {
         isFlatView = e.target.checked;
         loadFiles(currentPath, isFlatView);
     });
+
+    if (mediaFilter) {
+        mediaFilter.addEventListener('change', () => {
+            sortAndRenderFiles();
+        });
+    }
 
     selectAllCheckbox.addEventListener('change', (e) => {
         if (e.target.checked) {
@@ -275,9 +282,44 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(err => console.error(err));
     }
 
+    function checkHasTranscodedSibling(item) {
+        const nameWithoutPath = item.name.includes('/') ? item.name.substring(item.name.lastIndexOf('/') + 1) : item.name;
+        const baseFileName = nameWithoutPath.lastIndexOf('.') !== -1 ? nameWithoutPath.substring(0, nameWithoutPath.lastIndexOf('.')) : nameWithoutPath;
+        
+        const isTranscodedVersion = (otherName) => {
+            const otherNameWithoutPath = otherName.includes('/') ? otherName.substring(otherName.lastIndexOf('/') + 1) : otherName;
+            return otherNameWithoutPath.startsWith(baseFileName + '_transcoded_');
+        };
+
+        return fileItems.some(other => 
+            other !== item && !other.is_dir && isTranscodedVersion(other.name)
+        ) || globalTranscodedFiles.some(other => 
+            isTranscodedVersion(other.name)
+        );
+    }
+
     function sortAndRenderFiles() {
         const query = searchInput.value.toLowerCase();
-        let filtered = fileItems.filter(item => item.name.toLowerCase().includes(query));
+        const filterVal = mediaFilter ? mediaFilter.value : 'all';
+        
+        let filtered = fileItems.filter(item => {
+            if (!item.name.toLowerCase().includes(query)) return false;
+            if (item.is_dir) return true; // Always show directories (can be improved to hide empty ones, but keeping it simple)
+            
+            const isTranscoded = item.name.includes('_transcoded_');
+            
+            if (filterVal === 'transcoded') return isTranscoded;
+            if (filterVal === 'except_transcoded') return !isTranscoded;
+            
+            if (filterVal === 'original' || filterVal === 'not_transcoded') {
+                if (isTranscoded) return false;
+                const hasSibling = checkHasTranscodedSibling(item);
+                if (filterVal === 'original') return hasSibling;
+                if (filterVal === 'not_transcoded') return !hasSibling;
+            }
+            
+            return true; // 'all'
+        });
         
         let sorted = [...filtered];
         sorted.sort((a, b) => {
@@ -395,19 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 badge.style.fontWeight = 'bold';
                 badgesContainer.appendChild(badge);
             } else if (!item.is_dir) {
-                const nameWithoutPath = item.name.includes('/') ? item.name.substring(item.name.lastIndexOf('/') + 1) : item.name;
-                const baseFileName = nameWithoutPath.lastIndexOf('.') !== -1 ? nameWithoutPath.substring(0, nameWithoutPath.lastIndexOf('.')) : nameWithoutPath;
-                
-                const isTranscodedVersion = (otherName) => {
-                    const otherNameWithoutPath = otherName.includes('/') ? otherName.substring(otherName.lastIndexOf('/') + 1) : otherName;
-                    return otherNameWithoutPath.startsWith(baseFileName + '_transcoded_');
-                };
-
-                const hasTranscodedSibling = fileItems.some(other => 
-                    other !== item && !other.is_dir && isTranscodedVersion(other.name)
-                ) || globalTranscodedFiles.some(other => 
-                    isTranscodedVersion(other.name)
-                );
+                const hasTranscodedSibling = checkHasTranscodedSibling(item);
                 
                 if (hasTranscodedSibling) {
                     const badge = document.createElement('span');
@@ -612,85 +642,4 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('logsModal').style.display = 'none';
     });
 
-    // Transcoded Files Logic
-    const btnRefreshTranscoded = document.getElementById('btnRefreshTranscoded');
-    const transcodedListEl = document.getElementById('transcodedList');
-
-    function loadTranscodedFiles() {
-        if (!transcodedListEl) return;
-        transcodedListEl.innerHTML = '<div style="padding:1rem;">Loading...</div>';
-        fetch('/api/transcoded_files')
-            .then(res => res.json())
-            .then(data => {
-                if (data.error) {
-                    transcodedListEl.innerHTML = `<div style="padding:1rem;color:var(--accent-red);">${data.error}</div>`;
-                    return;
-                }
-                renderTranscodedFiles(data.items);
-                globalTranscodedFiles = data.items;
-                sortAndRenderFiles();
-            })
-            .catch(err => {
-                transcodedListEl.innerHTML = `<div style="padding:1rem;color:var(--accent-red);">Error loading files</div>`;
-            });
-    }
-
-    function renderTranscodedFiles(items) {
-        transcodedListEl.innerHTML = '';
-        if (!items || items.length === 0) {
-            transcodedListEl.innerHTML = '<div style="padding:1rem;">No transcoded files found.</div>';
-            return;
-        }
-
-        items.forEach(item => {
-            const li = document.createElement('div');
-            li.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-bottom: 1px solid var(--border-color);';
-            
-            const info = document.createElement('div');
-            info.style.flex = '1';
-            info.style.overflow = 'hidden';
-            info.innerHTML = `
-                <div style="font-weight: 600; margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.name}</div>
-                <div style="font-size: 0.85em; color: var(--text-secondary); display: flex; gap: 1rem;">
-                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%;">${item.path}</span>
-                    <span>${formatBytes(item.size)}</span>
-                    <span>${formatDate(item.mtime)}</span>
-                </div>
-            `;
-            
-            const actions = document.createElement('div');
-            const btnDelete = document.createElement('button');
-            btnDelete.className = 'btn-small';
-            btnDelete.textContent = 'Delete File';
-            btnDelete.style.backgroundColor = 'var(--accent-red)';
-            btnDelete.style.marginLeft = '1rem';
-            btnDelete.onclick = () => deleteDirectFile(item.path);
-            
-            actions.appendChild(btnDelete);
-            li.appendChild(info);
-            li.appendChild(actions);
-            transcodedListEl.appendChild(li);
-        });
-    }
-
-    window.deleteDirectFile = function(filePath) {
-        if (confirm(`Are you sure you want to permanently delete:\n${filePath}`)) {
-            fetch(`/api/files/${encodeURIComponent(filePath)}`, { method: 'DELETE' })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.error) alert('Error deleting file: ' + data.error);
-                    loadTranscodedFiles();
-                });
-        }
-    };
-
-    if (btnRefreshTranscoded) {
-        btnRefreshTranscoded.addEventListener('click', loadTranscodedFiles);
-    }
-    
-    const tabTranscoded = document.querySelector('[data-tab="tab-transcoded"]');
-    if (tabTranscoded) {
-        tabTranscoded.addEventListener('click', loadTranscodedFiles);
-    }
 });
-
