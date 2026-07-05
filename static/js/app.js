@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let isFlatView = false;
     let currentSort = 'name';
     let sortDesc = false;
+    let globalTranscodedFiles = [];
 
     // DOM Elements
     const fileListEl = document.getElementById('fileList');
@@ -27,6 +28,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Init
     loadFiles('', isFlatView);
     setupSSE();
+    loadGlobalTranscodedFiles();
+
+    function loadGlobalTranscodedFiles() {
+        fetch('/api/transcoded_files')
+            .then(res => res.json())
+            .then(data => {
+                if (data.items) {
+                    globalTranscodedFiles = data.items;
+                    sortAndRenderFiles();
+                }
+            })
+            .catch(err => console.error("Error loading transcoded files globally:", err));
+    }
 
     // Tab Switching
     const tabBtns = document.querySelectorAll('.tab-btn');
@@ -381,13 +395,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 badge.style.fontWeight = 'bold';
                 badgesContainer.appendChild(badge);
             } else if (!item.is_dir) {
-                const dirPath = item.path.lastIndexOf('/') !== -1 ? item.path.substring(0, item.path.lastIndexOf('/')) : '';
                 const baseFileName = item.name.lastIndexOf('.') !== -1 ? item.name.substring(0, item.name.lastIndexOf('.')) : item.name;
-                const expectedTranscodedDir = dirPath ? `${dirPath}/transcoded/` : 'transcoded/';
                 
                 const hasTranscodedSibling = fileItems.some(other => 
                     other !== item && !other.is_dir && 
-                    other.path.startsWith(expectedTranscodedDir) &&
+                    other.name.startsWith(baseFileName + '_transcoded_')
+                ) || globalTranscodedFiles.some(other => 
                     other.name.startsWith(baseFileName + '_transcoded_')
                 );
                 
@@ -609,6 +622,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 renderTranscodedFiles(data.items);
+                globalTranscodedFiles = data.items;
+                sortAndRenderFiles();
             })
             .catch(err => {
                 transcodedListEl.innerHTML = `<div style="padding:1rem;color:var(--accent-red);">Error loading files</div>`;
